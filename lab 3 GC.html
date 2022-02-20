@@ -1,0 +1,231 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>JS 3D Physics</title>
+        <style>
+            body { margin: 0; }
+        </style>
+    </head>
+    <body>
+        <script src="js/three.js"></script>
+        <script src="js/Ball.js"></script>
+        <script src="js/world_const.js"></script>
+        <script>
+
+            //variable declaration section
+            let  scene, camera, renderer;
+
+            var groundObjects = [], gameObjects = [];
+            
+
+            start();
+
+
+            function start (){
+                
+                setupGraphics();
+                initObjects();
+                renderFrame(); 
+
+            }
+
+          
+            function setupGraphics(){
+
+                //create clock for timing
+                clock = new THREE.Clock();
+
+                //create the scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color( 0xbfd1e5 );
+
+                //create camera
+                camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.2, 5000 );
+                camera.position.set( 0, 30, 70 );
+                camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+                //Add hemisphere light
+                let hemiLight = new THREE.HemisphereLight( 0xffffff, 0xffffff, 0.1 );
+                hemiLight.color.setHSL( 0.6, 0.6, 0.6 );
+                hemiLight.groundColor.setHSL( 0.1, 1, 0.4 );
+                hemiLight.position.set( 0, 50, 0 );
+                scene.add( hemiLight );
+
+                //Add directional light
+                let dirLight = new THREE.DirectionalLight( 0xffffff , 1);
+                dirLight.color.setHSL( 0.1, 1, 0.95 );
+                dirLight.position.set( -1, 1.75, 1 );
+                dirLight.position.multiplyScalar( 100 );
+                scene.add( dirLight );
+
+                dirLight.castShadow = true;
+
+                dirLight.shadow.mapSize.width = 2048;
+                dirLight.shadow.mapSize.height = 2048;
+
+                let d = 50;
+
+                dirLight.shadow.camera.left = -d;
+                dirLight.shadow.camera.right = d;
+                dirLight.shadow.camera.top = d;
+                dirLight.shadow.camera.bottom = -d;
+
+                dirLight.shadow.camera.far = 13500;
+
+                //Setup the renderer
+                renderer = new THREE.WebGLRenderer( { antialias: true } );
+                
+                renderer.setClearColor( 0xbfd1e5 );
+                renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize( window.innerWidth, window.innerHeight );
+                document.body.appendChild( renderer.domElement );
+
+                renderer.gammaInput = true;
+                renderer.gammaOutput = true;
+
+                renderer.shadowMap.enabled = true;
+
+            }
+
+            function initObjects(){
+                groundObjects = [
+                    new Ground(this.context, 0,0,0, 50, 2, 50, 0.5, scene)
+                ];
+                gameObjects = [
+                    new Ball(this.context, 0,30,0, 0,0,0, 15, 2, 0x00ff08, scene),
+                    new Ball(this.context, 5,20,5, 0,0,0, 10, 1, 0x00ff08, scene),
+                    new Ball(this.context, 15,60,5, 0,0,0, 10, 1, 0x00ff08, scene),
+                    new Ball(this.context, 5,50,4, 0,0,0, 10, 1, 0x00ff08, scene),
+                    new Ball(this.context, 5,340,7, 0,0,0, 10, 1, 0x00ff08, scene),
+                    new Ball(this.context, 5,26,6, 0,0,0, 10, 1, 0x00ff08, scene),
+                    new Ball(this.context, 1,10,0, 0,0,0, 16, 2, 0x00ff08, scene)
+                ];
+            }
+
+        
+            function renderFrame(){
+                let deltaTime = clock.getDelta();
+
+                updatePhisics(deltaTime);
+                manageGroundCollisions()
+                manageBallsCollisions()
+                renderer.render( scene, camera );
+
+           
+                requestAnimationFrame( renderFrame );
+            }
+            
+            function updatePhisics(deltaTime) { 
+               
+                for (let i = 0; i < gameObjects.length; i++) {
+                    gameObjects[i].update(deltaTime);
+                }
+            }
+
+            function ballsIntersect(obj1, obj2) {
+                return (obj1.x - obj2.x)*(obj1.x - obj2.x) + (obj1.y - obj2.y)*(obj1.y - obj2.y) + (obj1.z - obj2.z)*(obj1.z - obj2.z) <= (obj1.r + obj2.r)*(obj1.r + obj2.r) + eps;
+            }
+
+            function groundIntersect(ground, obj) {
+                if ((ground.x + ground.width/2 >= obj.x - obj.r || ground.x - ground.width/2 <= obj.x + obj.r ||
+                    ground.z + ground.length/2 >= obj.z - obj.r || ground.z - ground.length/2 <= obj.z + obj.r) &&
+                    ground.edgeDist(obj) <= obj.r) {
+                        return true;
+                    }
+
+                return false;
+            }
+
+            function groundSimpleIntersect(ground, obj) {
+                if ((ground.x + ground.width/2 >= obj.x && ground.x - ground.width/2 <= obj.x &&
+                     ground.z + ground.length/2 >= obj.z && ground.z - ground.length/2 <= obj.z) &&
+                    ground.y + ground.height/2 >= obj.y - obj.r ) {
+                        return true;
+                    }
+
+                return false;
+            }
+
+            function manageGroundCollisions() {
+                var groundObj;
+                var obj;
+                for (var i=0; i<groundObjects.length; i++) {
+                    groundObj = groundObjects[i];
+
+                    for (var j=0; j<gameObjects.length; j++) {
+                        obj = gameObjects[j];
+
+                        if (groundSimpleIntersect(groundObj, obj)) {
+                            obj.y = groundObj.y + groundObj.height/2 + obj.r;
+                            obj.vy = -obj.vy * groundObj.elasticity;
+                        } else if (groundIntersect(groundObj, obj)) {
+                            var collisionPt = groundObj.getIntersectionWithBall(obj);
+
+                            if (collisionPt == null) {
+                                return;
+                            }
+
+                            var collPlaneNorm = normalize(direction(collisionPt, obj));
+
+                            var vel = {x: obj.vx, y: obj.vy, z: obj.vz};
+                            var newV = direction(vel, scaleVec(collPlaneNorm, 2*scal(vel , collPlaneNorm)));
+
+                            newV = scaleVec(newV, groundObj.elasticity);
+                            
+                            obj.x = collisionPt.x + obj.r + eps;
+                            obj.y = collisionPt.y + obj.r + eps;
+                            obj.z = collisionPt.z + obj.r + eps;
+
+                            obj.vx = newV.x;
+                            obj.vy = newV.y;
+                            obj.vz = newV.z;
+
+                        }
+                    }
+                }
+            }
+
+            function manageBallsCollisions() {
+                var obj1;
+                var obj2;
+            
+                // for (var i = 0; i < gameObjects.length; i++) {
+                //     gameObjects[i].isColliding = false;
+                // }
+
+                for (var i = 0; i < gameObjects.length; i++) {
+                    obj1 = gameObjects[i];
+                    for (var j = i + 1; j < gameObjects.length; j++) {
+                        obj2 = gameObjects[j];
+
+                        if (ballsIntersect(obj1, obj2)) {
+                            // obj1.isColliding = true;
+                            // obj2.isColliding = true;
+
+                            var vCollision = {x: obj2.x - obj1.x, y: obj2.y - obj1.y, z: obj2.z - obj1.z};
+                            var distance = Math.sqrt((obj2.x-obj1.x)*(obj2.x-obj1.x) + (obj2.y-obj1.y)*(obj2.y-obj1.y) + (obj2.z-obj1.z)*(obj2.z-obj1.z));
+                            var vCollisionNorm = {x: vCollision.x / distance, y: vCollision.y / distance, z: vCollision.z / distance  };
+                            var vRelativeVelocity = {x: obj1.vx - obj2.vx, y: obj1.vy - obj2.vy, z: obj1.vz - obj2.vz, };
+                            var speed = vRelativeVelocity.x * vCollisionNorm.x + vRelativeVelocity.y * vCollisionNorm.y + vRelativeVelocity.z * vCollisionNorm.z;
+                            
+                            if (speed < 0) {
+                                break;
+                            }
+                            
+                            var impulse = 2 * speed / (obj1.mass + obj2.mass);
+                            obj1.vx -= (impulse * obj2.mass * vCollisionNorm.x);
+                            obj1.vy -= (impulse * obj2.mass * vCollisionNorm.y);
+                            obj1.vz -= (impulse * obj2.mass * vCollisionNorm.z);
+                            obj2.vx += (impulse * obj1.mass * vCollisionNorm.x);
+                            obj2.vy += (impulse * obj1.mass * vCollisionNorm.y);
+                            obj2.vz += (impulse * obj1.mass * vCollisionNorm.z);
+                        }
+                        
+                    }
+                }
+            
+            }
+
+        </script>
+    </body>
+</html>
